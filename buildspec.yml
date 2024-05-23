@@ -1,0 +1,84 @@
+version: 0.2
+
+env:
+  #parameter-store:
+  #  DOCKERHUB_KEY: /CodeBuild/fo-exchange_docker_key
+  #  DOCKERHUB_USER: /CodeBuild/fo-exchange_docker_user
+  #  BITBUCKET_USERNAME: /CodeBuild/datasolutions_bitbucket_user
+  #  BITBUCKET_PASSWORD: /CodeBuild/datasolutions_bitbucket_pass
+  #  SONAR_TOKEN: /CodeBuild/fo-exchange_sonar_token
+
+  variables:
+    ECR_REPOSITORY_URL: "placeholder-populated-by-codebuild"
+    ENVIRONMENT: "devus"
+    PUSH_TO_ECR: "false"
+    ECR_HOST: "381492184593.dkr.ecr.us-east-1.amazonaws.com/readynet"
+    AWS_REGION: "us-east-1"
+
+phases:
+  install:
+    commands:
+      - echo Entered the install phase...
+      - echo Downloading terraform
+      - curl -s -qL -o terraform_install.zip https://releases.hashicorp.com/terraform/1.3.9/terraform_1.3.9_linux_amd64.zip
+      - unzip terraform_install.zip -d /usr/bin/
+      - chmod +x /usr/bin/terraform
+    finally:
+      - terraform --version
+      - echo This always runs even if the update or install command fails
+  pre_build:
+    commands:
+      - echo Entered the pre_build phase...
+      - echo Building $CODEBUILD_SOURCE_VERSION  # When doing an ad-hoc (in AWS console) deployment, this ends up being the branch name, when coming from web hook it's the commit hash
+      - echo Building head ref $CODEBUILD_WEBHOOK_HEAD_REF
+      - echo CODEBUILD_RESOLVED_SOURCE_VERSION is $CODEBUILD_RESOLVED_SOURCE_VERSION
+      - echo Webhook Trigger $CODEBUILD_WEBHOOK_TRIGGER
+      - COMMIT=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c -7) # E.g. result: 1234567
+      - PR_NUMBER=$(echo $CODEBUILD_WEBHOOK_TRIGGER | sed -e "s/^pr\///")
+      - TRIGGER_KEY=$(echo $CODEBUILD_WEBHOOK_TRIGGER | awk -F "/" '{print $1}')
+      - #ECR_HOST=$(echo $ECR_REPOSITORY_URL | cut -d '/' -f 1)        # E.g. result: 117452757932.dkr.ecr.us-east-1.amazonaws.com
+      - # Log in to Amazon ECR
+      - echo Logging into ECR $ECR_HOST
+      - docker login --username AWS --password $(aws --region $AWS_REGION ecr get-login-password) $ECR_HOST
+      - # Log in to Dockerhub
+      - #echo $DOCKERHUB_KEY | docker login -u $DOCKERHUB_USER --password-stdin
+      - # Setup bitbucket SSH to allow for checking out terraform modules
+      - #printf "machine bitbucket.org\n\
+        #login ${BITBUCKET_USERNAME}\n\
+        #password ${BITBUCKET_PASSWORD}\n\n" >> /root/.netrc
+      - #chmod 600 /root/.netrc
+      - #make validate-terraform
+      - #export SONAR_SCANNER_VERSION=5.0.1.3006
+      - #export SONAR_SCANNER_HOME=$HOME/.sonar/sonar-scanner-$SONAR_SCANNER_VERSION-linux
+      - #curl --create-dirs -sSLo $HOME/.sonar/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-$SONAR_SCANNER_VERSION-linux.zip
+      - #unzip -qq -o $HOME/.sonar/sonar-scanner.zip -d $HOME/.sonar/
+      - #export PATH=$SONAR_SCANNER_HOME/bin:$PATH
+      - #export SONAR_SCANNER_OPTS="-server"
+
+    finally:
+      - echo This always runs even if the login command fails
+  build:
+    commands:
+      - echo Entered the build phase...
+      - WEBHOOK_SHORT_BRANCH_NAME=${CODEBUILD_WEBHOOK_TRIGGER#"branch/"}
+      - if [ -z $BRANCH_NAME ]; then BRANCH_NAME="${WEBHOOK_SHORT_BRANCH_NAME:-$CODEBUILD_SOURCE_VERSION}"; fi
+      - IMAGE_VERSION=$(echo $BRANCH_NAME | tr '/' '-') # Uses BRANCH_NAME, replaces '/' with '-' (ex. feature/BCE-1686... -> feature-BCE-1686...)
+      - #SWAGGER_VERSION=$(echo $BRANCH_NAME | awk  -F "/" '{ print $2 }') # Uses BRANCH_NAME after the /, (ex. release/1.10.0 -> 1.10.0)
+      - #echo $SWAGGER_VERSION > __version__
+      - echo IMAGE_VERSION is ${IMAGE_VERSION}
+      - echo BRANCH_NAME is ${BRANCH_NAME}
+      - echo Build ${COMMIT} started on `date`
+      - LASTCOMMIT=$(git rev-parse --short=7 HEAD~1)
+      - |
+        DOCKER_BUILDKIT=1 docker build \
+         --cache-from ${ECR_REPOSITORY_URL}:${LASTCOMMIT} \
+         --cache-from ${ECR_REPOSITORY_URL}:${COMMIT} \
+         --build-arg IMAGE_VERSION=${IMAGE_VERSION} \
+         --build-arg BUILDKIT_INLINE_CACHE=1 \
+         -t ready:latest .
+      - docker run --rm -v `pwd`:/workspace -w /workspace ready:latest /bin/ash -c "cp /go/bin/coverage.html /workspace/ && cp /go/bin/cover.out /workspace/ && cp /go/bin/report.xml /workspace/"
+      # Push the tagged Docker image to ECR
+      - docker tag firstorion-exchange:latest ${ECR_REPOSITORY_URL}:${COMMIT}
+      - if [ $PUSH_TO_ECR = "true" ]; then docker push ${ECR_REPOSITORY_URL}:${COMMIT}; fi
+      - echo Build of $BRANCH_NAME with commit hash of $COMMIT completed on `date`
+
