@@ -40,7 +40,7 @@ phases:
       - # Log in to Amazon ECR
       - echo Logging into ECR $ECR_HOST
       - docker login --username AWS --password $(aws --region $AWS_REGION ecr get-login-password) $ECR_HOST
-      -  Log in to Dockerhub
+      - # Log in to Dockerhub
       - echo $DOCKERHUB_KEY | docker login -u $DOCKERHUB_USER --password-stdin
       - # Setup bitbucket SSH to allow for checking out terraform modules
       - #printf "machine bitbucket.org\n\
