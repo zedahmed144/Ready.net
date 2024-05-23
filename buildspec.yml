@@ -12,7 +12,7 @@ env:
     ECR_REPOSITORY_URL: "placeholder-populated-by-codebuild"
     ENVIRONMENT: "devus"
     PUSH_TO_ECR: "false"
-    ECR_HOST: "381492184593.dkr.ecr.us-east-1.amazonaws.com/readynet"
+    ECR_HOST: "381492184593.dkr.ecr.us-east-1.amazonaws.com"
     AWS_REGION: "us-east-1"
 
 phases:
@@ -36,12 +36,12 @@ phases:
       - COMMIT=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c -7) # E.g. result: 1234567
       - PR_NUMBER=$(echo $CODEBUILD_WEBHOOK_TRIGGER | sed -e "s/^pr\///")
       - TRIGGER_KEY=$(echo $CODEBUILD_WEBHOOK_TRIGGER | awk -F "/" '{print $1}')
-      - #ECR_HOST=$(echo $ECR_REPOSITORY_URL | cut -d '/' -f 1)        # E.g. result: 117452757932.dkr.ecr.us-east-1.amazonaws.com
+      - ECR_HOST="381492184593.dkr.ecr.us-east-1.amazonaws.com"       # E.g. result: 117452757932.dkr.ecr.us-east-1.amazonaws.com
       - # Log in to Amazon ECR
       - echo Logging into ECR $ECR_HOST
       - docker login --username AWS --password $(aws --region $AWS_REGION ecr get-login-password) $ECR_HOST
-      - # Log in to Dockerhub
-      - #echo $DOCKERHUB_KEY | docker login -u $DOCKERHUB_USER --password-stdin
+      -  Log in to Dockerhub
+      - echo $DOCKERHUB_KEY | docker login -u $DOCKERHUB_USER --password-stdin
       - # Setup bitbucket SSH to allow for checking out terraform modules
       - #printf "machine bitbucket.org\n\
         #login ${BITBUCKET_USERNAME}\n\
